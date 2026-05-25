@@ -111,6 +111,30 @@ else
     sudo -n networksetup -setwebproxystate       "$svc" off || true
     sudo -n networksetup -setsecurewebproxystate "$svc" off || true
 fi
+# Java tools (Gradle's plugin classpath, Maven, anything on HttpsURLConnection)
+# ignore HTTP_PROXY env vars AND the macOS system proxy — they read JVM system
+# properties only. Manage a fenced block in ~/.gradle/gradle.properties so the
+# proxy is applied on every shell and cleared when the firewall is off.
+mkdir -p "$HOME/.gradle"
+gp="$HOME/.gradle/gradle.properties"
+if [ -f "$gp" ]; then
+    # Strip any existing clodpod-managed block (BSD sed)
+    sed -i '' '/^# >>> clodpod proxy >>>$/,/^# <<< clodpod proxy <<<$/d' "$gp" 2>/dev/null || true
+fi
+if [ -n "$PROXY_HOST" ]; then
+    {
+        printf '\n# >>> clodpod proxy >>>\n'
+        printf 'systemProp.http.proxyHost=%s\n'  "$PROXY_HOST"
+        printf 'systemProp.http.proxyPort=%s\n'  "$PROXY_PORT"
+        printf 'systemProp.https.proxyHost=%s\n' "$PROXY_HOST"
+        printf 'systemProp.https.proxyPort=%s\n' "$PROXY_PORT"
+        printf 'systemProp.http.nonProxyHosts=localhost|127.0.0.1|*.local\n'
+        printf '# <<< clodpod proxy <<<\n'
+    } >> "$gp"
+    echo "java proxy: ~/.gradle/gradle.properties → $PROXY_HOST:$PROXY_PORT"
+else
+    echo "java proxy: ~/.gradle/gradle.properties cleared"
+fi
 REMOTE
     ); then
         warn "system proxy: networksetup call failed — NSURLSession-backed tools (xcodebuild/SwiftPM) will bypass the firewall and time out"
